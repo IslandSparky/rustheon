@@ -17,7 +17,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-*/ustheon  - emulation of a Raytheon 703 in Rust
+*/
 
 
 const MAX_INST:i32 = 1000;         // max instructions before checking controls 
@@ -27,7 +27,7 @@ enum Mode{
     STEP
 }
 struct Memory {
-    memory:[i16;32_768]
+    core:[i16;32_768]
 }
 struct Cpu {
     mode:Mode,
@@ -78,7 +78,7 @@ impl Cpu{                           // create new implementation of Cpu
             inst_counter += 1;
             if inst_counter >= MAX_INST {           // time to return for console/keyboard check?
                 println! ("exiting after {} instructions pcr = {} acr = {} mem = {}"
-                            ,inst_counter,self.pcr,self.acr,memory.memory[self.pcr as usize]);
+                            ,inst_counter,self.pcr,self.acr,memory.core[self.pcr as usize]);
                 break 'executing;
             }
          }
@@ -107,7 +107,25 @@ impl Cpu{                           // create new implementation of Cpu
     }
     fn  decode_mem_reference(&mut self,memory:&mut Memory) {
         self.pcr += 1;
-        memory.memory[self.pcr as usize] = self.pcr as i16;   // store pcr for test only
+        match self.inr & 0xf0 {
+            0x10 => {self.jmp(memory)},
+            0x20 => {self.jsx(memory)},
+            0x30 => {self.stb(memory)},
+            0x40 => {self.cmb(memory)},
+            0x50 => {self.ldb(memory)},
+            0x50 => {self.ldb(memory)},
+            0x60 => {self.stx(memory)},
+            0x70 => {self.stw(memory)},
+            0x80 => {self.ldw(memory)},
+            0x90 => {self.ldx(memory)},
+            0xA0 => {self.add(memory)},
+            0xB0 => {self.sub(memory)},
+            0xC0 => {self.ori(memory)},
+            0xD0 => {self.ore(memory)},
+            0xE0 => {self.and(memory)},
+            0xF0 => {self.cmw(memory)},
+            _    => {self.illegal_instruction()}
+            } 
     }
     fn decode_generic(&mut self){}
     fn decode_register(&mut self){}
@@ -121,6 +139,22 @@ impl Cpu{                           // create new implementation of Cpu
     fn decode_shift_arith(&mut self){}
     fn decode_shift_logical(&mut self){}
     fn illegal_instruction(&mut self){}
+// These are the memory reference handlers    
+    fn jmp(&mut self,memory:&mut Memory){}
+    fn jsx(&mut self,memory:&mut Memory){}
+    fn stb(&mut self,memory:&mut Memory){}
+    fn cmb(&mut self,memory:&mut Memory){}
+    fn ldb(&mut self,memory:&mut Memory){}
+    fn stx(&mut self,memory:&mut Memory){}
+    fn stw(&mut self,memory:&mut Memory){}
+    fn ldw(&mut self,memory:&mut Memory){}
+    fn ldx(&mut self,memory:&mut Memory){}
+    fn add(&mut self,memory:&mut Memory){}
+    fn sub(&mut self,memory:&mut Memory){}
+    fn ori(&mut self,memory:&mut Memory){}
+    fn ore(&mut self,memory:&mut Memory){}
+    fn and(&mut self,memory:&mut Memory){}
+    fn cmw(&mut self,memory:&mut Memory){}
 
     fn fetch(&mut self){} 
 
@@ -129,7 +163,7 @@ impl Cpu{                           // create new implementation of Cpu
 
 fn main() {
     let mut cpu = Cpu::new();
-    let mut memory:Memory= Memory{memory:[0i16;32768]};    
+    let mut memory:Memory= Memory{core:[0i16;32768]};    
     cpu.mode = Mode::RUN;
     cpu.execute(&mut memory);    
     println! ("PCR ={}",cpu.pcr);
