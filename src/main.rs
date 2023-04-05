@@ -127,18 +127,73 @@ impl Cpu{                           // create new implementation of Cpu
             _    => {self.illegal_instruction()}
             } 
     }
-    fn decode_generic(&mut self){}
-    fn decode_register(&mut self){}
-    fn decode_din(&mut self){}
-    fn decode_dot(&mut self){}
-    fn decode_ixs(&mut self){}
-    fn decode_dxs(&mut self){}
-    fn decode_llb(&mut self){}
-    fn decode_clb(&mut self){}
+    fn decode_generic(&mut self){
+        //inr decoded as 00, instruction still in mbr
+        let digit2 = self.mbr & 0x00f0;
+        if digit2 == 0 {               // halt instruction, don't increment pcr
+            self.mode = Mode::HALT;
+            return;
+        }
+
+        match digit2 {
+            0x0010 => {self.inr()},
+            0x0020 => {self.enb()},
+            0x0030 => {self.dsb()},
+            0x0040 => {self.slm()},
+            0x0050 => {self.sgm()},
+            0x0060 => {self.cex()},
+            0x0070 => {self.cxe()},
+            0x0080 => {self.sml()},
+            0x0090 => {self.smu()},
+            0x00A0 => {self.msk()},
+            0x00B0 => {self.unm()},
+                  _ => {self.illegal_instruction()}
+        }
+        self.pcr += 1;              // increment pcr for all others
+    }
+    fn decode_register(&mut self){
+        //inr decoded as 01, instruction still in mbr
+        let digit2 = self.mbr & 0x00f0;
+        match digit2 {
+            0x0010 => {self.clr()},
+            0x0020 => {self.cmp()},
+            0x0030 => {self.inv()},
+            0x0040 => {self.cax()},
+            0x0050 => {self.cxa()},
+                 _ => {self.illegal_instruction()}
+            
+        }
+        self.pcr += 1;
+    }
+    fn decode_din(&mut self){
+        self.din();
+        self.pcr += 1;
+    }
+    fn decode_dot(&mut self) {
+        self.dot();
+        self.pcr += 1;
+    }
+    fn decode_ixs(&mut self){
+        self.ixs();
+        self.pcr += 1;
+    }
+    fn decode_dxs(&mut self){
+        self.dxs();
+        self.pcr += 1;
+    }
+    fn decode_llb(&mut self){
+        self.llb();
+        self.pcr += 1;
+    }
+    fn decode_clb(&mut self){
+        self.clb();
+        self.pcr +=1;
+    }
     fn decode_skip(&mut self){}
     fn decode_shift_arith(&mut self){}
     fn decode_shift_logical(&mut self){}
     fn illegal_instruction(&mut self){}
+
 // These are the memory reference handlers    
     fn jmp(&mut self,memory:&mut Memory){}
     fn jsx(&mut self,memory:&mut Memory){}
@@ -155,6 +210,38 @@ impl Cpu{                           // create new implementation of Cpu
     fn ore(&mut self,memory:&mut Memory){}
     fn and(&mut self,memory:&mut Memory){}
     fn cmw(&mut self,memory:&mut Memory){}
+ // These are the generic instruction handlers
+    fn inr(&mut self){}
+    fn enb(&mut self){}
+    fn dsb(&mut self){}
+    fn slm(&mut self){}
+    fn sgm(&mut self){}
+    fn cex(&mut self){}
+    fn cxe(&mut self){}
+    fn sml(&mut self){}
+    fn smu(&mut self){}
+    fn msk(&mut self){}
+    fn unm(&mut self){}
+// These are register instruction handlers
+    fn clr(&mut self){}
+    fn cmp(&mut self){}
+    fn inv(&mut self){}
+    fn cax(&mut self){}
+    fn cxa(&mut self){}
+// Direct input handler
+    fn din(&mut self){}
+// Direct output handler
+    fn dot(&mut self){}
+// Increment index and skip handler
+    fn ixs(&mut self){}
+// Decrement index and skip handler
+    fn dxs(&mut self){}
+// Load literal byte handler
+    fn llb(&mut self){}
+// Compare literal byte handler
+    fn clb(&mut self){}
+
+
 
     fn fetch(&mut self){} 
 
