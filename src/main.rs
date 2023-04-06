@@ -21,6 +21,14 @@ SOFTWARE.
 
 
 const MAX_INST:i32 = 1000;         // max instructions before checking controls 
+
+// masks defining the contexts of the status register
+const EXR_MASK:u16 = 0xF800;        // exr registeer in status word
+const ADFNEG:u16 =   0x0400;        // compare negative  flag
+const ADFEQL:u16 =   0x0200;        // compare equal flag
+const ADFOVF:u16 =   0x0100;        // overflow flag
+const ADFGBL:u16 =   0x0080;        // global mode flag
+
 enum Mode{
     HALT,
     RUN,
@@ -41,6 +49,7 @@ struct Cpu {
     int_req: u16,                   // interrupt request register
     int_act: u16,                   // interrupt active register
     int_enb: u16,                   // interrupt enabled register
+    int_masked: bool,               // interrupt mask flip/flop
 
 }
 impl Cpu{                           // create new implementation of Cpu
@@ -56,7 +65,8 @@ impl Cpu{                           // create new implementation of Cpu
             inr: 0,
             int_req:0,                        
             int_act: 0,                       
-            int_enb:0,   
+            int_enb:0,
+            int_masked: true,   
         }
     }
     // instruction execution loop, broken periodically to update console
@@ -112,7 +122,6 @@ impl Cpu{                           // create new implementation of Cpu
             0x20 => {self.jsx(memory)},
             0x30 => {self.stb(memory)},
             0x40 => {self.cmb(memory)},
-            0x50 => {self.ldb(memory)},
             0x50 => {self.ldb(memory)},
             0x60 => {self.stx(memory)},
             0x70 => {self.stw(memory)},
@@ -189,7 +198,30 @@ impl Cpu{                           // create new implementation of Cpu
         self.clb();
         self.pcr +=1;
     }
-    fn decode_skip(&mut self){}
+    fn decode_skip(&mut self){
+    // inr decoded as 0x08, instruction still in mbr
+    let digit2 = self.mbr & 0x00f0;
+    match digit2 {
+        0x0000 => {self.saz()},
+        0x0010 => {self.sap()},
+        0x0020 => {self.sam()},
+        0x0030 => {self.sao()},
+        0x0040 => {self.sls()},
+        0x0050 => {self.sxe()},
+        0x0060 => {self.seq()},
+        0x0070 => {self.sne()},
+        0x0080 => {self.sgr()},
+        0x0090 => {self.sle()},
+        0x00A0 => {self.sno()},
+        0x00B0 => {self.sse()},
+        0x00C0 => {self.ss0()},
+        0x00D0 => {self.ss1()},
+        0x00E0 => {self.ss2()},
+        0x00F0 => {self.ss3()},
+             _ => {self.illegal_instruction()}
+        }
+        self.pcr += 1;  
+   }
     fn decode_shift_arith(&mut self){}
     fn decode_shift_logical(&mut self){}
     fn illegal_instruction(&mut self){}
@@ -240,6 +272,23 @@ impl Cpu{                           // create new implementation of Cpu
     fn llb(&mut self){}
 // Compare literal byte handler
     fn clb(&mut self){}
+// These are the skip handlers
+    fn saz(&mut self){}
+    fn sap(&mut self){}
+    fn sam(&mut self){}
+    fn sao(&mut self){}
+    fn sls(&mut self){}
+    fn sxe(&mut self){}
+    fn seq(&mut self){}
+    fn sne(&mut self){}
+    fn sgr(&mut self){}
+    fn sle(&mut self){}
+    fn sno(&mut self){}
+    fn sse(&mut self){}
+    fn ss0(&mut self){}
+    fn ss1(&mut self){}
+    fn ss2(&mut self){}
+    fn ss3(&mut self){}
 
 
 
