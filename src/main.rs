@@ -222,8 +222,41 @@ impl Cpu{                           // create new implementation of Cpu
         }
         self.pcr += 1;  
    }
-    fn decode_shift_arith(&mut self){}
-    fn decode_shift_logical(&mut self){}
+    fn decode_shift_arith(&mut self){
+        // inr decoded as 0x09, instruction still in mbr
+        let digit2 = self.mbr & 0x00f0;
+        match digit2 {
+            0x0000 => {self.sra()},
+            0x0010 => {self.sla()},
+            0x0020 => {self.srad()},
+            0x0030 => {self.slad()},
+                 _ => {self.illegal_instruction()}
+        }
+        self.pcr += 1;
+    }
+    fn decode_shift_logical(&mut self){
+        // inr decoded as 0x0A, instruction still in mbr
+        let digit2 = self.mbr & 0x00f0;
+        match digit2 {
+            0x0000 => {self.srl()},
+            0x0010 => {self.sll()},
+            0x0020 => {self.srld()},
+            0x0030 => {self.slld()},
+            0x0040 => {self.src()},
+            0x0050 => {self.slc()},
+            0x0060 => {self.srcd()},
+            0x0070 => {self.slcd()},
+            0x0080 => {self.srll()},
+            0x0090 => {self.slll()},
+            0x00A0 => {self.srlr()},
+            0x00B0 => {self.sllr()},
+            0x00C0 => {self.srcl()},
+            0x00D0 => {self.slcl()},
+            0x00E0 => {self.srcr()},
+            0x00F0 => {self.slcr()},
+                 _ => {self.illegal_instruction()}
+        }
+    }
     fn illegal_instruction(&mut self){}
 
 // These are the memory reference handlers    
@@ -289,7 +322,28 @@ impl Cpu{                           // create new implementation of Cpu
     fn ss1(&mut self){}
     fn ss2(&mut self){}
     fn ss3(&mut self){}
-
+// These are the shift arithmetic handlers
+    fn sra(&mut self){}
+    fn sla(&mut self){}
+    fn srad(&mut self){}
+    fn slad(&mut self){}
+// These are the shift logical handlers
+    fn srl(&mut self){}
+    fn  sll(&mut self){}
+    fn srld(&mut self){}
+    fn slld(&mut self){}
+    fn  src(&mut self){}
+    fn  slc(&mut self){}
+    fn srcd(&mut self){}
+    fn slcd(&mut self){}
+    fn srll(&mut self){}
+    fn slll(&mut self){}
+    fn srlr(&mut self){}
+    fn sllr(&mut self){}
+    fn srcl(&mut self){}
+    fn slcl(&mut self){}
+    fn srcr(&mut self){}
+    fn slcr(&mut self){}
 
 
     fn fetch(&mut self){} 
@@ -302,6 +356,6 @@ fn main() {
     let mut memory:Memory= Memory{core:[0i16;32768]};    
     cpu.mode = Mode::RUN;
     cpu.execute(&mut memory);    
-    println! ("PCR ={}",cpu.pcr);
-    
+    println! ("PCR ={:04x}",cpu.pcr);
+  
 }    
