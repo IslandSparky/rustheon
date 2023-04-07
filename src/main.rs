@@ -256,6 +256,7 @@ impl Cpu{                           // create new implementation of Cpu
             0x00F0 => {self.slcr()},
                  _ => {self.illegal_instruction()}
         }
+        self.pcr += 1;
     }
     fn illegal_instruction(&mut self){}
 
@@ -285,14 +286,28 @@ impl Cpu{                           // create new implementation of Cpu
     fn cxe(&mut self){}
     fn sml(&mut self){}
     fn smu(&mut self){}
-    fn msk(&mut self){}
-    fn unm(&mut self){}
+    fn msk(&mut self){                  // mask interrupts
+        self.int_masked = true;
+    }
+    fn unm(&mut self){                  // unmask interrupts
+        self.int_masked = false;
+    }
 // These are register instruction handlers
-    fn clr(&mut self){}
-    fn cmp(&mut self){}
-    fn inv(&mut self){}
-    fn cax(&mut self){}
-    fn cxa(&mut self){}
+    fn clr(&mut self){                  // clear accumulator
+        self.acr = 0;
+    }
+    fn cmp(&mut self){                  // complement accumulator
+        self.acr = -self.acr;
+    }
+    fn inv(&mut self){                  // invert accumulator
+        self.acr = ((self.acr as u16) ^ 0xFFFF) as i16;
+    }
+    fn cax(&mut self){                  // copy accumulator to index
+        self.ixr = self.acr;
+    }
+    fn cxa(&mut self){                  // copy index to accumulator
+        self.acr = self.ixr;
+    }
 // Direct input handler
     fn din(&mut self){}
 // Direct output handler
@@ -306,12 +321,22 @@ impl Cpu{                           // create new implementation of Cpu
 // Compare literal byte handler
     fn clb(&mut self){}
 // These are the skip handlers
-    fn saz(&mut self){}
-    fn sap(&mut self){}
-    fn sam(&mut self){}
-    fn sao(&mut self){}
+    fn saz(&mut self){                     // skip accumulator zero
+        if self.acr == 0 {self.pcr += 1}
+    }
+    fn sap(&mut self){                      // skip accumulator positive
+        if self.acr >= 0 {self.pcr += 1}
+    }
+    fn sam(&mut self){                      // skip accumulator negative
+        if self.acr < 0 { self.pcr += 1}
+    }
+    fn sao(&mut self){                      // skip accumulator odd
+        if self.acr & 1 > 0 {self.pcr +=1}
+    }
     fn sls(&mut self){}
-    fn sxe(&mut self){}
+    fn sxe(&mut self){                      // skip if index even
+        if self.ixr & 1 == 0 {self.pcr += 1}
+    }
     fn seq(&mut self){}
     fn sne(&mut self){}
     fn sgr(&mut self){}
