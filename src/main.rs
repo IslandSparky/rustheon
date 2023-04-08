@@ -29,6 +29,8 @@ const ADFEQL:u16 =   0x0200;        // compare equal flag
 const ADFOVF:u16 =   0x0100;        // overflow flag
 const ADFGBL:u16 =   0x0080;        // global mode flag
 
+
+#[derive(Debug)]
 enum Mode{
     HALT,
     RUN,
@@ -73,8 +75,11 @@ impl Cpu{                           // create new implementation of Cpu
     fn execute(&mut self,memory:&mut Memory) {
         let mut inst_counter = 0;               // counter for number instructions before checking console
         'executing: loop {
+            //println!("Top of executing loop");
             match self.mode {
                 Mode::HALT => {
+                    println!{ "Halt instruction encountered"};
+                    self.print_registers();
                     break 'executing;
                 },
                 Mode::STEP => {
@@ -86,16 +91,11 @@ impl Cpu{                           // create new implementation of Cpu
                 },
             }
             inst_counter += 1;
-            if inst_counter >= MAX_INST {           // time to return for console/keyboard check?
-                println! ("exiting after {} instructions pcr = {} acr = {} mem = {}"
-                            ,inst_counter,self.pcr,self.acr,memory.core[self.pcr as usize]);
-                break 'executing;
-            }
-         }
+        }
     }
     // first level decoder
     fn decode(&mut self,memory:&mut Memory) {
-        self.fetch();                        // fetch instruction into MBR and INR
+        self.fetch(memory);                        // fetch instruction into MBR and INR
         if (self.inr & 0xf0) != 0 {
             self.decode_mem_reference(memory);
             return;
@@ -114,6 +114,7 @@ impl Cpu{                           // create new implementation of Cpu
             0x0A => {self.decode_shift_logical()},
                _ => {self.illegal_instruction()}
         }
+        //println!("Exiting decode");
     }
     fn  decode_mem_reference(&mut self,memory:&mut Memory) {
         self.pcr += 1;
@@ -348,16 +349,41 @@ impl Cpu{                           // create new implementation of Cpu
     fn ss2(&mut self){}
     fn ss3(&mut self){}
 // These are the shift arithmetic handlers
-    fn sra(&mut self){}
-    fn sla(&mut self){}
+    fn sra(&mut self){                              // shift right arithmetic
+        println!{"in sra"};
+       let count = self.mbr & 0x000F; 
+       self.acr = self.acr >> count;
+    }
+    fn sla(&mut self){                              // shift left arithmetic
+        let count = self.mbr & 0x000F; 
+        self.acr = self.acr << count; 
+        // todo check for overflow       
+    }
     fn srad(&mut self){}
     fn slad(&mut self){}
 // These are the shift logical handlers
-    fn srl(&mut self){}
-    fn  sll(&mut self){}
+    fn srl(&mut self){                                  // shift right logical
+        let count = self.mbr & 0x000F; 
+        self.acr = ((self.acr  as u16) >> count) as i16;        
+    }
+    fn  sll(&mut self){                                 // shift left logical
+        let count = self.mbr & 0x000F; 
+        self.acr = ((self.acr  as u16) << count) as i16;  
+    }
     fn srld(&mut self){}
     fn slld(&mut self){}
-    fn  src(&mut self){}
+    fn  src(&mut self){
+        let count = self.mbr & 0x000F; 
+        let mut u_acr: u16 = self.acr  as u16;
+        for _i in 0 .. count{
+            let lsb = u_acr & 1;
+            u_acr = u_acr >> 1;
+            if lsb != 0 {
+                u_acr = u_acr | 0x8000;
+            }
+        }
+        self.acr = u_acr as i16;         
+    }
     fn  slc(&mut self){}
     fn srcd(&mut self){}
     fn slcd(&mut self){}
@@ -371,16 +397,23 @@ impl Cpu{                           // create new implementation of Cpu
     fn slcr(&mut self){}
 
 
-    fn fetch(&mut self){} 
-
-
+    fn fetch(&mut self,memory:&mut Memory){                    // fetch next instruction into mbr and inr
+        self.mbr = memory.core[self.pcr as usize] as u16;
+        self.inr = ( (self.mbr & 0xFF00) >> 8) as u8;
+    }
+    fn print_registers(&mut self){
+        println!("PCR = {:04X}  ACR = {:04X}  IXR =    {:04X}",self.pcr,self.acr,self.ixr);
+        println!("MBR = {:04X}  MAR = {:04X}  Status = {:04X}",self.mbr,self.mar,self.status);
+        println!("Inr = {:02x}  Mode = {:?}",self.inr,self.mode);        
+    } 
 }
 
 fn main() {
     let mut cpu = Cpu::new();
     let mut memory:Memory= Memory{core:[0i16;32768]};    
     cpu.mode = Mode::RUN;
+    cpu.acr = (0x0801 as u16) as i16;
+    memory.core[0] = 0x0A44;
     cpu.execute(&mut memory);    
-    println! ("PCR ={:04x}",cpu.pcr);
   
 }    
