@@ -23,7 +23,8 @@ SOFTWARE.
 const MAX_INST:i32 = 1000;         // max instructions before checking controls 
 
 // masks defining the contexts of the status register
-const EXR_MASK:u16 = 0xF800;        // exr registeer in status word
+const EXR_WORD_MASK:u16 = 0xF000;   // word portion of exr registeer in status word
+const EXR_BYTE_MASK:u16 = 0xF800;   // byte portion of exr in status word
 const ADFNEG:u16 =   0x0400;        // compare negative  flag
 const ADFEQL:u16 =   0x0200;        // compare equal flag
 const ADFOVF:u16 =   0x0100;        // overflow flag
@@ -95,7 +96,8 @@ impl Cpu{                           // create new implementation of Cpu
     }
     // first level decoder
     fn decode(&mut self,memory:&mut Memory) {
-        self.fetch(memory);                        // fetch instruction into MBR and INR
+        self.fetch(memory);                         // fetch instruction into MBR and INR
+        self.pcr += 1;                              // increment the program counter
         if (self.inr & 0xf0) != 0 {
             self.decode_mem_reference(memory);
             return;
@@ -117,8 +119,8 @@ impl Cpu{                           // create new implementation of Cpu
         //println!("Exiting decode");
     }
     fn  decode_mem_reference(&mut self,memory:&mut Memory) {
-        self.pcr += 1;
-        match self.inr & 0xf0 {
+        self. compute_word_address();               // form the effective word address in mar
+        match self.inr & 0xf0 {                     //    will be overwritten if word address
             0x10 => {self.jmp(memory)},
             0x20 => {self.jsx(memory)},
             0x30 => {self.stb(memory)},
@@ -136,6 +138,7 @@ impl Cpu{                           // create new implementation of Cpu
             0xF0 => {self.cmw(memory)},
             _    => {self.illegal_instruction()}
             } 
+        self.copy_pcr_to_exr();
     }
     fn decode_generic(&mut self){
         //inr decoded as 00, instruction still in mbr
@@ -159,7 +162,6 @@ impl Cpu{                           // create new implementation of Cpu
             0x00B0 => {self.unm()},
                   _ => {self.illegal_instruction()}
         }
-        self.pcr += 1;              // increment pcr for all others
     }
     fn decode_register(&mut self){
         //inr decoded as 01, instruction still in mbr
@@ -173,31 +175,24 @@ impl Cpu{                           // create new implementation of Cpu
                  _ => {self.illegal_instruction()}
             
         }
-        self.pcr += 1;
     }
     fn decode_din(&mut self){
         self.din();
-        self.pcr += 1;
     }
     fn decode_dot(&mut self) {
         self.dot();
-        self.pcr += 1;
     }
     fn decode_ixs(&mut self){
         self.ixs();
-        self.pcr += 1;
     }
     fn decode_dxs(&mut self){
         self.dxs();
-        self.pcr += 1;
     }
     fn decode_llb(&mut self){
         self.llb();
-        self.pcr += 1;
-    }
+     }
     fn decode_clb(&mut self){
         self.clb();
-        self.pcr +=1;
     }
     fn decode_skip(&mut self){
     // inr decoded as 0x08, instruction still in mbr
@@ -221,7 +216,6 @@ impl Cpu{                           // create new implementation of Cpu
         0x00F0 => {self.ss3()},
              _ => {self.illegal_instruction()}
         }
-        self.pcr += 1;  
    }
     fn decode_shift_arith(&mut self){
         // inr decoded as 0x09, instruction still in mbr
@@ -233,7 +227,6 @@ impl Cpu{                           // create new implementation of Cpu
             0x0030 => {self.slad()},
                  _ => {self.illegal_instruction()}
         }
-        self.pcr += 1;
     }
     fn decode_shift_logical(&mut self){
         // inr decoded as 0x0A, instruction still in mbr
@@ -257,26 +250,89 @@ impl Cpu{                           // create new implementation of Cpu
             0x00F0 => {self.slcr()},
                  _ => {self.illegal_instruction()}
         }
-        self.pcr += 1;
     }
     fn illegal_instruction(&mut self){}
 
 // These are the memory reference handlers    
-    fn jmp(&mut self,memory:&mut Memory){}
-    fn jsx(&mut self,memory:&mut Memory){}
+    fn jmp(&mut self,memory:&mut Memory){               // jump 
+        self.compute_word_address();
+        self.pcr = self.mar as u16;
+    }
+    fn jsx(&mut self,memory:&mut Memory){               // jump and store index
+        self.compute_word_address();
+        self.ixr = self.pcr as i16;
+        self.pcr = self.mar as u16;
+        self.status = self.status | ADFGBL;  // forces global mode
+    }
     fn stb(&mut self,memory:&mut Memory){}
     fn cmb(&mut self,memory:&mut Memory){}
     fn ldb(&mut self,memory:&mut Memory){}
-    fn stx(&mut self,memory:&mut Memory){}
-    fn stw(&mut self,memory:&mut Memory){}
-    fn ldw(&mut self,memory:&mut Memory){}
-    fn ldx(&mut self,memory:&mut Memory){}
-    fn add(&mut self,memory:&mut Memory){}
-    fn sub(&mut self,memory:&mut Memory){}
-    fn ori(&mut self,memory:&mut Memory){}
-    fn ore(&mut self,memory:&mut Memory){}
-    fn and(&mut self,memory:&mut Memory){}
-    fn cmw(&mut self,memory:&mut Memory){}
+    fn stx(&mut self,memory:&mut Memory){               // store index
+        self.compute_word_address();
+        memory.core[self.mar] = self.ixr;        
+    }
+    fn stw(&mut self,memory:&mut Memory){               // store word
+        self.compute_word_address();
+        memory.core[self.mar] = self.acr;
+    }
+    fn ldw(&mut self,memory:&mut Memory){               // load word
+        self.compute_word_address();
+        self.acr = memory.core[self.mar];
+    }
+    fn ldx(&mut self,memory:&mut Memory){               // load index
+        self.compute_word_address();
+        self.ixr = memory.core[self.mar];
+    }   
+    fn add(&mut self,memory:&mut Memory){               // add 
+        self.compute_word_address();
+        match self.acr.checked_add(memory.core[self.mar]) {
+            Some(value) => {
+                self.acr = value;
+                self.status = self.status & !ADFOVF;
+            },
+            None           => {
+                self.status = self.status | ADFOVF;     // overflow, note and fake results
+                self.acr = ( (self.acr as u16) + (memory.core[self.mar] as u16) ) as i16;
+            },
+        }; 
+
+    }
+    fn sub(&mut self,memory:&mut Memory){               // subtract
+        self.compute_word_address();
+        match self.acr.checked_sub(memory.core[self.mar]) {
+            Some(value) => {
+                self.acr = value;
+                self.status = self.status & !ADFOVF;
+            },
+            None           => {
+                self.status = self.status | ADFOVF;     // overflow, note and fake results
+                self.acr = ( (self.acr as u16) - (memory.core[self.mar] as u16) ) as i16;
+            },
+        }; 
+    }
+    fn ori(&mut self,memory:&mut Memory){               // inclusive or
+        self.compute_word_address();
+        self.acr = memory.core[self.mar] | self.acr;
+    }
+    fn ore(&mut self,memory:&mut Memory){               // exclusive or
+        self.compute_word_address();
+        self.acr = memory.core[self.mar] ^ self.acr;
+    }
+    fn and(&mut self,memory:&mut Memory){               // logical and
+        self.compute_word_address();
+        self.acr = memory.core[self.mar] & self.acr;
+    }
+    fn cmw(&mut self,memory:&mut Memory){               // compare word
+        self.status = self.status & !(ADFEQL | ADFNEG); // clear compare flags for default
+        self.compute_word_address();
+        let result:i16 = self.acr - memory.core[self.mar]; 
+        if result < 0    {
+            self.status = self.status | ADFNEG;
+        } else if result == 0 {
+            self.status = self.status | ADFEQL;
+        }
+
+    }
  // These are the generic instruction handlers
     fn inr(&mut self){}
     fn enb(&mut self){}
@@ -372,19 +428,18 @@ impl Cpu{                           // create new implementation of Cpu
     }
     fn srld(&mut self){}
     fn slld(&mut self){}
-    fn  src(&mut self){
-        let count = self.mbr & 0x000F; 
+    fn  src(&mut self){                             // shift right circular
+        let count:u32 = (self.mbr & 0x000F) as u32; 
         let mut u_acr: u16 = self.acr  as u16;
-        for _i in 0 .. count{
-            let lsb = u_acr & 1;
-            u_acr = u_acr >> 1;
-            if lsb != 0 {
-                u_acr = u_acr | 0x8000;
-            }
-        }
+        u_acr = u_acr.rotate_right(count);
         self.acr = u_acr as i16;         
     }
-    fn  slc(&mut self){}
+    fn  slc(&mut self){                             // shift left circular
+        let count:u32 = (self.mbr & 0x000F) as u32; 
+        let mut u_acr: u16 = self.acr  as u16;
+        u_acr = u_acr.rotate_left(count);
+        self.acr = u_acr as i16;  
+    }
     fn srcd(&mut self){}
     fn slcd(&mut self){}
     fn srll(&mut self){}
@@ -397,10 +452,26 @@ impl Cpu{                           // create new implementation of Cpu
     fn slcr(&mut self){}
 
 
-    fn fetch(&mut self,memory:&mut Memory){                    // fetch next instruction into mbr and inr
-        self.mbr = memory.core[self.pcr as usize] as u16;
+    fn fetch(&mut self,memory:&mut Memory){            // fetch next instruction into mbr and inr
+        self.mar = self.pcr as usize;
+        self.mbr = memory.core[self.mar] as u16;
         self.inr = ( (self.mbr & 0xFF00) >> 8) as u8;
     }
+    fn compute_word_address(&mut self) {                 // form effective word address in MAR
+        self.mar = 0;
+        self.mar = self.mar | (self.mbr & 0x07FF) as usize;         // get partial address from instruction
+        self.mar = self.mar | ( self.status & (EXR_WORD_MASK >> 1) )as usize ;    //if not indexed, we are finishedd
+        if (self.mbr & 0x0800) != 0 {                   // indexed instruction
+            if (self.status | ADFGBL) != 0 {            // global mode
+                self.mar = self.mar & 0x07FF;           // in global, clear out exr portion
+            } 
+            self.mar = self.mar + (self.ixr as usize);  // todo does ixr add as negative?
+        }
+    }
+    fn copy_pcr_to_exr (&mut self){                     // copy high 5 bits of pcr to exr
+        self.status= ( (self.pcr << 1) & EXR_BYTE_MASK) | (self.status & !EXR_BYTE_MASK);    
+    }
+
     fn print_registers(&mut self){
         println!("PCR = {:04X}  ACR = {:04X}  IXR =    {:04X}",self.pcr,self.acr,self.ixr);
         println!("MBR = {:04X}  MAR = {:04X}  Status = {:04X}",self.mbr,self.mar,self.status);
@@ -412,8 +483,11 @@ fn main() {
     let mut cpu = Cpu::new();
     let mut memory:Memory= Memory{core:[0i16;32768]};    
     cpu.mode = Mode::RUN;
-    cpu.acr = (0x0801 as u16) as i16;
-    memory.core[0] = 0x0A44;
-    cpu.execute(&mut memory);    
-  
+
+    cpu.acr = (0x0000 as u16) as i16;
+    cpu.ixr = (0x0020 as u16) as i16;
+    memory.core[0x30] = (0x0001 as u16) as i16;
+    memory.core[0] = (0xB810 as u16) as i16;
+    cpu.execute(&mut memory);
+    println!("Memory location 0x30 = {:04x}",memory.core[0x30] );
 }    
