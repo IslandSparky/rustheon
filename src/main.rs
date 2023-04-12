@@ -37,6 +37,11 @@ enum Mode{
     RUN,
     STEP
 }
+#[derive(Debug)]
+enum ByteSelect{
+    LEFT,
+    RIGHT,
+}
 struct Memory {
     core:[i16;32_768]
 }
@@ -258,31 +263,85 @@ impl Cpu{                           // create new implementation of Cpu
         self.compute_word_address();
         self.pcr = self.mar as u16;
     }
+
     fn jsx(&mut self,memory:&mut Memory){               // jump and store index
         self.compute_word_address();
         self.ixr = self.pcr as i16;
         self.pcr = self.mar as u16;
         self.status = self.status | ADFGBL;  // forces global mode
     }
-    fn stb(&mut self,memory:&mut Memory){}
-    fn cmb(&mut self,memory:&mut Memory){}
-    fn ldb(&mut self,memory:&mut Memory){}
+
+    fn stb(&mut self,memory:&mut Memory){               // store byte
+        let left_right = self.compute_byte_address();
+        let mut memory_word = memory.core[self.mar];
+        match left_right {
+            ByteSelect::RIGHT => {
+                memory_word = memory_word & ( 0xFF00 as u16)  as i16 | (self.acr & 0x00FF);
+            },
+            ByteSelect::LEFT  => {
+                memory_word = (memory_word & 0x00FF) | self.acr << 8 ;
+            }
+        }
+        memory.core[self.mar] = memory_word;
+    }
+
+    fn cmb(&mut self,memory:&mut Memory){               // compare memory byte
+        let left_right = self.compute_byte_address();
+        let mut memory_word = memory.core[self.mar];
+        self.status = self.status & !(ADFGBL | ADFNEG);
+        match left_right {
+            ByteSelect::RIGHT => {
+                if ((self.acr & 0x00FF) as i8) < ((memory_word & 0x00FF) as i8) {
+                    self.status = self.status | ADFNEG;
+                } else if ((self.acr & 0x00FF) as i8) == ((memory_word & 0x00FF) as i8){
+                    self.status = self.status | ADFEQL;
+                } 
+            },
+            ByteSelect::LEFT  => {  
+                memory_word = memory_word >> 8;         
+                if ((self.acr & 0x00FF) as i8) < ((memory_word & 0x00FF) as i8) {
+                    self.status = self.status | ADFNEG;
+                } else if ((self.acr & 0x00FF) as i8) == ((memory_word & 0x00FF) as i8){
+                    self.status = self.status | ADFEQL;
+                } 
+            }
+        }
+    }
+
+    fn ldb(&mut self,memory:&mut Memory){                   // load byte
+        let left_right = self.compute_byte_address();
+        let mut memory_word = memory.core[self.mar];
+        self.acr = self.acr & (0xFF00 as u16) as i16;
+        match left_right {
+            ByteSelect::RIGHT => {
+                self.acr = self.acr | memory_word & 0x00FF;
+            },
+            ByteSelect::LEFT  => {
+                self.acr = self.acr | memory_word >> 8 & 0x00FF;
+            }
+        }
+    }
+
     fn stx(&mut self,memory:&mut Memory){               // store index
         self.compute_word_address();
         memory.core[self.mar] = self.ixr;        
     }
+
     fn stw(&mut self,memory:&mut Memory){               // store word
         self.compute_word_address();
         memory.core[self.mar] = self.acr;
     }
+
     fn ldw(&mut self,memory:&mut Memory){               // load word
         self.compute_word_address();
         self.acr = memory.core[self.mar];
     }
+
     fn ldx(&mut self,memory:&mut Memory){               // load index
         self.compute_word_address();
         self.ixr = memory.core[self.mar];
-    }   
+    }
+
     fn add(&mut self,memory:&mut Memory){               // add 
         self.compute_word_address();
         match self.acr.checked_add(memory.core[self.mar]) {
@@ -297,6 +356,7 @@ impl Cpu{                           // create new implementation of Cpu
         }; 
 
     }
+
     fn sub(&mut self,memory:&mut Memory){               // subtract
         self.compute_word_address();
         match self.acr.checked_sub(memory.core[self.mar]) {
@@ -310,29 +370,33 @@ impl Cpu{                           // create new implementation of Cpu
             },
         }; 
     }
+
     fn ori(&mut self,memory:&mut Memory){               // inclusive or
         self.compute_word_address();
         self.acr = memory.core[self.mar] | self.acr;
     }
+
     fn ore(&mut self,memory:&mut Memory){               // exclusive or
         self.compute_word_address();
         self.acr = memory.core[self.mar] ^ self.acr;
     }
+
     fn and(&mut self,memory:&mut Memory){               // logical and
         self.compute_word_address();
         self.acr = memory.core[self.mar] & self.acr;
     }
+
     fn cmw(&mut self,memory:&mut Memory){               // compare word
         self.status = self.status & !(ADFEQL | ADFNEG); // clear compare flags for default
         self.compute_word_address();
-        let result:i16 = self.acr - memory.core[self.mar]; 
-        if result < 0    {
+        if self.acr < memory.core[self.mar]     {
             self.status = self.status | ADFNEG;
-        } else if result == 0 {
+        } else if self.acr == memory.core[self.mar]  {
             self.status = self.status | ADFEQL;
         }
 
     }
+    
  // These are the generic instruction handlers
     fn inr(&mut self){}
     fn enb(&mut self){}
@@ -468,6 +532,32 @@ impl Cpu{                           // create new implementation of Cpu
             self.mar = self.mar + (self.ixr as usize);  // todo does ixr add as negative?
         }
     }
+    fn compute_byte_address(&mut self) -> ByteSelect{                // form effective word address in MAR
+        self.mar = 0;
+        let mut byte_flag =  ByteSelect::LEFT; 
+        if (self.mbr & 0x0800) == 0 {                   // handlle non-indexed case
+            match self.mbr & 0x0001 {
+                0x0000 => {byte_flag = ByteSelect::LEFT},
+                0x0001 => {byte_flag = ByteSelect::RIGHT},
+                     _ => {}
+            }
+            self.mar =  ( (self.mbr & 0x7ff) as usize) >> 1;
+            self.mar = self.mar | ( (self.status & EXR_BYTE_MASK) >> 1) as usize ;    
+        } else {                                          // handle indexed case
+            self.mar = (self.mbr & 0x07FF) as usize;
+            if (self.status & ADFGBL) != 0 {   // local mode - add in exr
+                self.mar = self.mar | (self.status & EXR_BYTE_MASK) as usize ; 
+            }
+            self.mar = self.mar + (self.ixr as usize);
+            match self.mar & 0x0001 {
+                0x0000 => {byte_flag = ByteSelect::LEFT},
+                0x0001 => {byte_flag = ByteSelect::RIGHT},
+                     _ => {},
+            }
+            self.mar = self.mar >> 1;
+        }
+        byte_flag                                           // return left or right flag
+    }    
     fn copy_pcr_to_exr (&mut self){                     // copy high 5 bits of pcr to exr
         self.status= ( (self.pcr << 1) & EXR_BYTE_MASK) | (self.status & !EXR_BYTE_MASK);    
     }
@@ -484,10 +574,10 @@ fn main() {
     let mut memory:Memory= Memory{core:[0i16;32768]};    
     cpu.mode = Mode::RUN;
 
-    cpu.acr = (0x0000 as u16) as i16;
-    cpu.ixr = (0x0020 as u16) as i16;
-    memory.core[0x30] = (0x0001 as u16) as i16;
-    memory.core[0] = (0xB810 as u16) as i16;
+    cpu.acr = (0x55FF as u16) as i16;
+    cpu.ixr = (0x0021 as u16) as i16;
+    memory.core[0x0018] = (0x00FF as u16) as i16;
+    memory.core[0] = (0x4810 as u16) as i16;
     cpu.execute(&mut memory);
-    println!("Memory location 0x30 = {:04x}",memory.core[0x30] );
+    println!("Memory location 0x18 = {:04x}",memory.core[0x18] );
 }    
