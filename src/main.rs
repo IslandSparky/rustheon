@@ -54,7 +54,7 @@ struct Cpu {
     mbr: u16,                       // memory buffer register
     mar: usize,                     // memory address register
     inr: u8,                        // instruction register
-    int_req: u16,                   // interrupt request register
+    int_req: u16,                   // interrupt request register   // int 15 (highest) is MSB
     int_act: u16,                   // interrupt active register
     int_enb: u16,                   // interrupt enabled register
     int_masked: bool,               // interrupt mask flip/flop
@@ -354,7 +354,6 @@ impl Cpu{                           // create new implementation of Cpu
                 self.acr = ( (self.acr as u16) + (memory.core[self.mar] as u16) ) as i16;
             },
         }; 
-
     }
 
     fn sub(&mut self,memory:&mut Memory){               // subtract
@@ -394,39 +393,51 @@ impl Cpu{                           // create new implementation of Cpu
         } else if self.acr == memory.core[self.mar]  {
             self.status = self.status | ADFEQL;
         }
-
     }
-    
+
  // These are the generic instruction handlers
     fn inr(&mut self){}
     fn enb(&mut self){}
     fn dsb(&mut self){}
-    fn slm(&mut self){}
-    fn sgm(&mut self){}
-    fn cex(&mut self){}
-    fn cxe(&mut self){}
-    fn sml(&mut self){}
-    fn smu(&mut self){}
-    fn msk(&mut self){                  // mask interrupts
+    fn slm(&mut self){                                  // set local mode
+        self.status = self.status & !ADFGBL;
+    }
+    fn sgm(&mut self){                                  // set global mode
+        self.status = self.status | ADFGBL;      
+    }
+    fn cex(&mut self){                                  // copy extension to index
+        self.ixr =  (self.ixr & 0x07FF) | (self.status as i16 & EXR_BYTE_MASK as i16);
+    }
+    fn cxe(&mut self){                                  // copy index to extension
+        self.status =  (self.status & !EXR_BYTE_MASK) | (self.ixr as u16 & EXR_BYTE_MASK);
+    }
+    fn sml(&mut self){                                  // set memory lower
+        self.status = (self.status & !EXR_BYTE_MASK) | (self.mbr & 0x000F) << 11;
+    }
+    fn smu(&mut self){                                  // set memory upper
+        self.status = ( (self.status & !EXR_BYTE_MASK) | 0x8000 )| (self.mbr & 0x000F) << 11;        
+    }
+    fn msk(&mut self){                                  // mask interrupts
         self.int_masked = true;
     }
-    fn unm(&mut self){                  // unmask interrupts
+    fn unm(&mut self){                                  // unmask interrupts
         self.int_masked = false;
     }
+
 // These are register instruction handlers
-    fn clr(&mut self){                  // clear accumulator
+    fn clr(&mut self){                                  // clear accumulator
         self.acr = 0;
     }
-    fn cmp(&mut self){                  // complement accumulator
+    fn cmp(&mut self){                                  // complement accumulator
         self.acr = -self.acr;
     }
-    fn inv(&mut self){                  // invert accumulator
+    fn inv(&mut self){                                  // invert accumulator
         self.acr = ((self.acr as u16) ^ 0xFFFF) as i16;
     }
-    fn cax(&mut self){                  // copy accumulator to index
+    fn cax(&mut self){                                  // copy accumulator to index
         self.ixr = self.acr;
     }
-    fn cxa(&mut self){                  // copy index to accumulator
+    fn cxa(&mut self){                                  // copy index to accumulator
         self.acr = self.ixr;
     }
 // Direct input handler
@@ -441,28 +452,43 @@ impl Cpu{                           // create new implementation of Cpu
     fn llb(&mut self){}
 // Compare literal byte handler
     fn clb(&mut self){}
+
 // These are the skip handlers
-    fn saz(&mut self){                     // skip accumulator zero
+    fn saz(&mut self){                                  // skip accumulator zero
         if self.acr == 0 {self.pcr += 1}
     }
-    fn sap(&mut self){                      // skip accumulator positive
+    fn sap(&mut self){                                  // skip accumulator positive
         if self.acr >= 0 {self.pcr += 1}
     }
-    fn sam(&mut self){                      // skip accumulator negative
+    fn sam(&mut self){                                  // skip accumulator negative
         if self.acr < 0 { self.pcr += 1}
     }
-    fn sao(&mut self){                      // skip accumulator odd
+    fn sao(&mut self){                                  // skip accumulator odd
         if self.acr & 1 > 0 {self.pcr +=1}
     }
     fn sls(&mut self){}
-    fn sxe(&mut self){                      // skip if index even
+    fn sxe(&mut self){                                  // skip if index even
         if self.ixr & 1 == 0 {self.pcr += 1}
     }
-    fn seq(&mut self){}
-    fn sne(&mut self){}
-    fn sgr(&mut self){}
-    fn sle(&mut self){}
-    fn sno(&mut self){}
+    fn seq(&mut self){                                  // skip equal
+        if self.status & ADFEQL == 0 {self.pcr += 1}
+    }
+    fn sne(&mut self){                                  // skip not equal
+        if self.status & ADFEQL != 0 {self.pcr += 1}
+    }
+    fn sgr(&mut self){                                  // skip greater
+        if (self.status & ADFEQL == 0) & (self.status & ADFNEG == 0 ) {
+            self.pcr += 1;
+        } 
+    }
+    fn sle(&mut self){                                  // skip less than or equal
+        if (self.status & ADFEQL != 0) | (self.status & ADFNEG != 0 ) {
+            self.pcr += 1;
+        }
+    }
+    fn sno(&mut self){                                  // skip no overflow
+        if self.status & ADFOVF == 0 { self.pcr += 1}
+    }
     fn sse(&mut self){}
     fn ss0(&mut self){}
     fn ss1(&mut self){}
@@ -521,6 +547,7 @@ impl Cpu{                           // create new implementation of Cpu
         self.mbr = memory.core[self.mar] as u16;
         self.inr = ( (self.mbr & 0xFF00) >> 8) as u8;
     }
+
     fn compute_word_address(&mut self) {                 // form effective word address in MAR
         self.mar = 0;
         self.mar = self.mar | (self.mbr & 0x07FF) as usize;         // get partial address from instruction
@@ -532,6 +559,7 @@ impl Cpu{                           // create new implementation of Cpu
             self.mar = self.mar + (self.ixr as usize);  // todo does ixr add as negative?
         }
     }
+
     fn compute_byte_address(&mut self) -> ByteSelect{                // form effective word address in MAR
         self.mar = 0;
         let mut byte_flag =  ByteSelect::LEFT; 
@@ -557,7 +585,8 @@ impl Cpu{                           // create new implementation of Cpu
             self.mar = self.mar >> 1;
         }
         byte_flag                                           // return left or right flag
-    }    
+    }
+
     fn copy_pcr_to_exr (&mut self){                     // copy high 5 bits of pcr to exr
         self.status= ( (self.pcr << 1) & EXR_BYTE_MASK) | (self.status & !EXR_BYTE_MASK);    
     }
@@ -577,7 +606,7 @@ fn main() {
     cpu.acr = (0x55FF as u16) as i16;
     cpu.ixr = (0x0021 as u16) as i16;
     memory.core[0x0018] = (0x00FF as u16) as i16;
-    memory.core[0] = (0x4810 as u16) as i16;
+    memory.core[0] = (0x009F as u16) as i16;
     cpu.execute(&mut memory);
     println!("Memory location 0x18 = {:04x}",memory.core[0x18] );
 }    
