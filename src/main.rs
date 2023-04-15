@@ -444,12 +444,20 @@ impl Cpu{                           // create new implementation of Cpu
     fn din(&mut self){}
 // Direct output handler
     fn dot(&mut self){}
-// Increment index and skip handler
-    fn ixs(&mut self){}
-// Decrement index and skip handler
-    fn dxs(&mut self){}
-// Load literal byte handler
-    fn llb(&mut self){}
+
+    fn ixs(&mut self){                                  // increment index and skip >= 0
+        self.ixr = self.ixr +  ( self.mbr & 0x00FF) as i16;
+        if self.ixr >= 0 {self.pcr += 1}
+    }
+
+    fn dxs(&mut self){                                  // decrement index and skip < 0
+        self.ixr = self.ixr -  ( self.mbr & 0x00FF) as i16;
+        if self.ixr < 0 {self.pcr += 1}
+    }
+
+    fn llb(&mut self){                                  // load literal byte
+        self.acr = self.acr | (self.mbr & 0x00FF) as i16;
+    }
 // Compare literal byte handler
     fn clb(&mut self){}
 
@@ -466,7 +474,9 @@ impl Cpu{                           // create new implementation of Cpu
     fn sao(&mut self){                                  // skip accumulator odd
         if self.acr & 1 > 0 {self.pcr +=1}
     }
-    fn sls(&mut self){}
+    fn sls(&mut self){                                  // skip on compare less
+        if self.status & ADFNEG != 0 {self.pcr += 1}
+    }
     fn sxe(&mut self){                                  // skip if index even
         if self.ixr & 1 == 0 {self.pcr += 1}
     }
@@ -604,9 +614,9 @@ fn main() {
     cpu.mode = Mode::RUN;
 
     cpu.acr = (0x55FF as u16) as i16;
-    cpu.ixr = (0x0021 as u16) as i16;
-    memory.core[0x0018] = (0x00FF as u16) as i16;
-    memory.core[0] = (0x009F as u16) as i16;
+    cpu.ixr = (0x0000 as u16) as i16;
+    memory.core[0x0018] = (0x0000 as u16) as i16;
+    memory.core[0] = (0x04FF as u16) as i16;
     cpu.execute(&mut memory);
     println!("Memory location 0x18 = {:04x}",memory.core[0x18] );
 }    
