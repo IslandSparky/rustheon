@@ -148,7 +148,7 @@ impl Cpu{                           // create new implementation of Cpu
     fn decode_generic(&mut self){
         //inr decoded as 00, instruction still in mbr
         let digit2 = self.mbr & 0x00f0;
-        if digit2 == 0 {               // halt instruction, don't increment pcr
+        if digit2 == 0 {                             // halt instruction
             self.mode = Mode::HALT;
             return;
         }
@@ -459,7 +459,15 @@ impl Cpu{                           // create new implementation of Cpu
         self.acr = self.acr | (self.mbr & 0x00FF) as i16;
     }
 // Compare literal byte handler
-    fn clb(&mut self){}
+    fn clb(&mut self){                                  // compare literal byte
+        self.status = self.status & !(ADFEQL | ADFNEG); 
+        let byte = (self.mbr & 0x00FF) as i8;
+        if ( (self.acr & 0x00FF) as i8 ) < byte {
+            self.status = self.status | ADFNEG;
+        } else if ( (self.acr & 0x00FF) as i8 ) == byte  {
+            self.status = self.status | ADFEQL;
+        }
+    }
 
 // These are the skip handlers
     fn saz(&mut self){                                  // skip accumulator zero
@@ -505,51 +513,137 @@ impl Cpu{                           // create new implementation of Cpu
     fn ss2(&mut self){}
     fn ss3(&mut self){}
 // These are the shift arithmetic handlers
-    fn sra(&mut self){                              // shift right arithmetic
-        println!{"in sra"};
+    fn sra(&mut self){                                  // shift right arithmetic
        let count = self.mbr & 0x000F; 
        self.acr = self.acr >> count;
     }
-    fn sla(&mut self){                              // shift left arithmetic
+    fn sla(&mut self){                                  // shift left arithmetic
+        self.status = self.status & !ADFOVF;   // reset overflow for test
         let count = self.mbr & 0x000F; 
-        self.acr = self.acr << count; 
-        // todo check for overflow       
+        for _i in 0 .. count {
+            if   (self.acr & (0x8000 as u16) as i16)  ^ ( (self.acr & 0x4000) ) << 1 != 0 { // check for overflow
+                self.status = self.status | ADFOVF ;
+            }
+           self.acr = self.acr << 1;
+        }
     }
-    fn srad(&mut self){}
-    fn slad(&mut self){}
+    fn srad(&mut self){                                 // shift right arithmetic double
+        let count = self.mbr & 0x000F; 
+        let mut word32:i32 = ((self.acr as i32) << 16) | ( (self.ixr as i32) & 0x0000FFFF );
+        word32 = word32 >> count;
+        self.ixr = (word32 & 0x0000FFFF) as i16;
+        self.acr = (word32 >> 16) as i16;    
+    }
+    fn slad(&mut self){                                     // shift left arithmetic double
+        self.status = self.status & !ADFOVF;   // reset overflow for test
+        let count = self.mbr & 0x000F; 
+        let mut word32:i32 = ((self.acr as i32) << 16) | ( (self.ixr as i32) & 0x0000FFFF );
+        for _i in 0 .. count {
+            if   (word32 & (0x80000000 as u32) as i32)  ^ ( (word32 & 0x40000000) ) << 1 != 0 { // check for overflow
+                self.status = self.status | ADFOVF ;
+            }
+           word32 = word32 << 1;
+        }
+        self.ixr = (word32 & 0x0000FFFF) as i16;
+        self.acr = (word32 >> 16) as i16;
+    }
 // These are the shift logical handlers
-    fn srl(&mut self){                                  // shift right logical
+    fn srl(&mut self){                                      // shift right logical
         let count = self.mbr & 0x000F; 
         self.acr = ((self.acr  as u16) >> count) as i16;        
     }
-    fn  sll(&mut self){                                 // shift left logical
+    fn  sll(&mut self){                                     // shift left logical
         let count = self.mbr & 0x000F; 
         self.acr = ((self.acr  as u16) << count) as i16;  
     }
-    fn srld(&mut self){}
-    fn slld(&mut self){}
-    fn  src(&mut self){                             // shift right circular
+    fn srld(&mut self){                                     // shift right logical double
+        let count = self.mbr & 0x000F; 
+        let mut word32:u32 = ((self.acr as u32) << 16) | ( (self.ixr as u32) & 0x0000FFFF );
+        word32 = word32 >> count;
+        self.ixr = (word32 & 0x0000FFFF) as i16;
+        self.acr = (word32 >> 16) as i16;   
+    }
+    fn slld(&mut self){                                     // shift left logical double
+        let count = self.mbr & 0x000F; 
+        let mut word32:u32 = ((self.acr as u32) << 16) | ( (self.ixr as u32) & 0x0000FFFF );
+        word32 = word32 << count;
+        self.ixr = (word32 & 0x0000FFFF) as i16;
+        self.acr = (word32 >> 16) as i16;   
+    }       
+    fn  src(&mut self){                                     // shift right circular
         let count:u32 = (self.mbr & 0x000F) as u32; 
         let mut u_acr: u16 = self.acr  as u16;
         u_acr = u_acr.rotate_right(count);
         self.acr = u_acr as i16;         
     }
-    fn  slc(&mut self){                             // shift left circular
+    fn  slc(&mut self){                                     // shift left circular
         let count:u32 = (self.mbr & 0x000F) as u32; 
         let mut u_acr: u16 = self.acr  as u16;
         u_acr = u_acr.rotate_left(count);
         self.acr = u_acr as i16;  
     }
-    fn srcd(&mut self){}
-    fn slcd(&mut self){}
-    fn srll(&mut self){}
-    fn slll(&mut self){}
-    fn srlr(&mut self){}
-    fn sllr(&mut self){}
-    fn srcl(&mut self){}
-    fn slcl(&mut self){}
-    fn srcr(&mut self){}
-    fn slcr(&mut self){}
+    fn srcd(&mut self){                                     // shift right circular double
+        let count = self.mbr & 0x000F; 
+        let mut word32:u32 = ((self.acr as u32) << 16) | ( (self.ixr as u32) & 0x0000FFFF );
+        word32 = word32.rotate_right(count as u32);
+        self.ixr = (word32 & 0x0000FFFF) as i16;
+        self.acr = (word32 >> 16) as i16;   
+    }
+    fn slcd(&mut self){                                     // shift left circular double
+        let count = self.mbr & 0x000F; 
+        let mut word32:u32 = ((self.acr as u32) << 16) | ( (self.ixr as u32) & 0x0000FFFF );
+        word32 = word32.rotate_left(count as u32);
+        self.ixr = (word32 & 0x0000FFFF) as i16;
+        self.acr = (word32 >> 16) as i16;   
+    }
+    fn srll(&mut self){                                     // shift right logical left byte
+        let count = self.mbr & 0x000F; 
+        let mut byte =  (self.acr >> 8) as u8;
+        byte = byte >> count;
+        self.acr = (self.acr & 0x00FF) | (byte as i16) << 8;
+    }
+    fn slll(&mut self){                                     // shift left logical left byte
+        let count = self.mbr & 0x000F; 
+        let mut byte =  (self.acr >> 8) as u8;
+        byte = byte << count;
+        self.acr = (self.acr & 0x00FF) | (byte as i16) << 8;
+    }
+    fn srlr(&mut self){                                     // shift right logical right byte 
+        let count = self.mbr & 0x000F; 
+        let mut byte = (self.acr & 0x00FF) as u8;
+        byte = byte >> count;
+        self.acr = (self.acr & ( (0xFF00 as u16) as i16) )| (byte as i16);
+    }
+    fn sllr(&mut self){                                     // shift left logical right byte
+        let count = self.mbr & 0x000F; 
+        let mut byte = (self.acr & 0x00FF) as u8;
+        byte = byte << count;
+        self.acr = (self.acr & ( (0xFF00 as u16) as i16) )| (byte as i16);
+    }
+    fn srcl(&mut self){                                     // shift right circular left byte
+        let count = self.mbr & 0x000F; 
+        let mut byte =  (self.acr >> 8) as u8;
+        byte = byte.rotate_right(count as u32);
+        self.acr = (self.acr & 0x00FF) | (byte as i16) << 8;
+    }
+    fn slcl(&mut self){                                     // shift left circular left byte
+        let count = self.mbr & 0x000F; 
+        let mut byte =  (self.acr >> 8) as u8;
+        byte = byte.rotate_left(count as u32);
+        self.acr = (self.acr & 0x00FF) | (byte as i16) << 8;
+    }
+    fn srcr(&mut self){                                     // shift right circular right byte
+        let count = self.mbr & 0x000F; 
+        let mut byte = (self.acr & 0x00FF) as u8;
+        byte = byte.rotate_right(count as u32);
+        self.acr = (self.acr & ( (0xFF00 as u16) as i16) )| (byte as i16);
+    }
+    fn slcr(&mut self){                                     // shift left circular right byte
+        let count = self.mbr & 0x000F; 
+        let mut byte = (self.acr & 0x00FF) as u8;
+        byte = byte.rotate_left(count as u32);
+        self.acr = (self.acr & ( (0xFF00 as u16) as i16) )| (byte as i16);
+    }
 
 
     fn fetch(&mut self,memory:&mut Memory){            // fetch next instruction into mbr and inr
@@ -613,10 +707,10 @@ fn main() {
     let mut memory:Memory= Memory{core:[0i16;32768]};    
     cpu.mode = Mode::RUN;
 
-    cpu.acr = (0x55FF as u16) as i16;
-    cpu.ixr = (0x0000 as u16) as i16;
+    cpu.acr = (0x00FF as u16) as i16;
+    cpu.ixr = (0x4321 as u16) as i16;
     memory.core[0x0018] = (0x0000 as u16) as i16;
-    memory.core[0] = (0x04FF as u16) as i16;
+    memory.core[0] = (0x07FF as u16) as i16;
     cpu.execute(&mut memory);
     println!("Memory location 0x18 = {:04x}",memory.core[0x18] );
 }    
