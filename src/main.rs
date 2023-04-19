@@ -37,7 +37,6 @@ enum Mode{
     RUN,
     STEP
 }
-#[derive(Debug)]
 enum ByteSelect{
     LEFT,
     RIGHT,
@@ -74,7 +73,7 @@ impl Cpu{                           // create new implementation of Cpu
             int_req:0,                        
             int_act: 0,                       
             int_enb:0,
-            int_masked: true,   
+            int_masked: false,   
         }
     }
     // instruction execution loop, broken periodically to update console
@@ -108,7 +107,7 @@ impl Cpu{                           // create new implementation of Cpu
             return;
         }
         match self.inr {
-            0x00 => {self.decode_generic()},
+            0x00 => {self.decode_generic(memory)},
             0x01 => {self.decode_register()},
             0x02 => {self.decode_din()},
             0x03 => {self.decode_dot()},
@@ -121,13 +120,13 @@ impl Cpu{                           // create new implementation of Cpu
             0x0A => {self.decode_shift_logical()},
                _ => {self.illegal_instruction()}
         }
-        //println!("Exiting decode");
+        self.check_interrupts(memory);
     }
     fn  decode_mem_reference(&mut self,memory:&mut Memory) {
         self. compute_word_address();               // form the effective word address in mar
         match self.inr & 0xf0 {                     //    will be overwritten if word address
-            0x10 => {self.jmp(memory)},
-            0x20 => {self.jsx(memory)},
+            0x10 => {self.jmp()},
+            0x20 => {self.jsx()},
             0x30 => {self.stb(memory)},
             0x40 => {self.cmb(memory)},
             0x50 => {self.ldb(memory)},
@@ -145,7 +144,7 @@ impl Cpu{                           // create new implementation of Cpu
             } 
         self.copy_pcr_to_exr();
     }
-    fn decode_generic(&mut self){
+    fn decode_generic(&mut self,memory:&mut Memory){
         //inr decoded as 00, instruction still in mbr
         let digit2 = self.mbr & 0x00f0;
         if digit2 == 0 {                             // halt instruction
@@ -154,7 +153,7 @@ impl Cpu{                           // create new implementation of Cpu
         }
 
         match digit2 {
-            0x0010 => {self.inr()},
+            0x0010 => {self.inret(memory)},
             0x0020 => {self.enb()},
             0x0030 => {self.dsb()},
             0x0040 => {self.slm()},
@@ -256,15 +255,22 @@ impl Cpu{                           // create new implementation of Cpu
                  _ => {self.illegal_instruction()}
         }
     }
-    fn illegal_instruction(&mut self){}
+    fn illegal_instruction(&mut self){
+        println!(" Illegal instruction decoded");
+        self.mode = Mode::HALT;
+    }
+    fn not_implemented(&mut self){
+        println!("Instruction not implemented");
+        self.mode = Mode::HALT;
+    }    
 
 // These are the memory reference handlers    
-    fn jmp(&mut self,memory:&mut Memory){               // jump 
+    fn jmp(&mut self){               // jump 
         self.compute_word_address();
         self.pcr = self.mar as u16;
     }
 
-    fn jsx(&mut self,memory:&mut Memory){               // jump and store index
+    fn jsx(&mut self){               // jump and store index
         self.compute_word_address();
         self.ixr = self.pcr as i16;
         self.pcr = self.mar as u16;
@@ -310,7 +316,7 @@ impl Cpu{                           // create new implementation of Cpu
 
     fn ldb(&mut self,memory:&mut Memory){                   // load byte
         let left_right = self.compute_byte_address();
-        let mut memory_word = memory.core[self.mar];
+        let memory_word = memory.core[self.mar];
         self.acr = self.acr & (0xFF00 as u16) as i16;
         match left_right {
             ByteSelect::RIGHT => {
@@ -396,9 +402,23 @@ impl Cpu{                           // create new implementation of Cpu
     }
 
  // These are the generic instruction handlers
-    fn inr(&mut self){}
-    fn enb(&mut self){}
-    fn dsb(&mut self){}
+    fn inret(&mut self,memory:&mut Memory){             // interrupt return
+        let level = self.mbr & 0x000F;
+        let base:usize = (level * 4) as usize;         // base address of int vector
+        self.int_act = self.int_act & !(0x0001 << level);
+        self.status = memory.core[base + 2] as u16; // restore machine status
+        self.pcr = memory.core[base] as u16;        // return via saved pcr
+    }
+    fn enb(&mut self){                                    //interrupt enable
+        let level = self.mbr & 0x000F;  
+        self.int_enb = self.int_enb | (0x0001 << level);
+    }
+    fn dsb(&mut self){                                  // interrupt disable
+        let level = self.mbr & 0x000F;  
+        self.int_enb = self.int_enb & !(0x0001 << level); 
+        self.int_act = self.int_act & !(0x0001 << level);
+        self.int_req = self.int_req & !(0x0001 << level);       
+    }
     fn slm(&mut self){                                  // set local mode
         self.status = self.status & !ADFGBL;
     }
@@ -507,11 +527,21 @@ impl Cpu{                           // create new implementation of Cpu
     fn sno(&mut self){                                  // skip no overflow
         if self.status & ADFOVF == 0 { self.pcr += 1}
     }
-    fn sse(&mut self){}
-    fn ss0(&mut self){}
-    fn ss1(&mut self){}
-    fn ss2(&mut self){}
-    fn ss3(&mut self){}
+    fn sse(&mut self){                                  // skip external sense switch
+        self.not_implemented();
+    }
+    fn ss0(&mut self){                                  // skip on sense switch 0
+        self.not_implemented();
+    }
+    fn ss1(&mut self){                                  // skip on sense switch 1
+        self.not_implemented();
+    }
+    fn ss2(&mut self){                                  // skip on sense switch 2
+        self.not_implemented();
+    }
+    fn ss3(&mut self){                                  // skip on sense switch
+        self.not_implemented();
+    }
 // These are the shift arithmetic handlers
     fn sra(&mut self){                                  // shift right arithmetic
        let count = self.mbr & 0x000F; 
@@ -695,10 +725,42 @@ impl Cpu{                           // create new implementation of Cpu
         self.status= ( (self.pcr << 1) & EXR_BYTE_MASK) | (self.status & !EXR_BYTE_MASK);    
     }
 
+    fn check_interrupts(&mut self,memory:&mut Memory) { // see if interrupt pending
+        if self.int_masked | (self.int_enb == 0) | (self.int_req == 0) {
+            return;                                     // nothing to do, return
+        }
+        if self.int_act.leading_zeros() <= self.int_req.leading_zeros() {
+            return;                                     // higher one is active, return
+        }
+        let mut level = 15;
+        let mask:u16 = 0x0001;
+        'check: loop {
+            if (self.int_req & (mask << level) != 0 ) &
+               (self.int_act & (mask << level) == 0 ) &
+               (self.int_enb & (mask << level) != 0 ) {
+                 self.process_interrupt(memory,level);
+                 break 'check;
+            }
+            level -= 1;
+            if level < 0 { break 'check;}
+        }
+    }
+
+    fn process_interrupt(&mut self,memory:&mut Memory,level:i32) { // do interrupt sequencee at level
+        self.int_act = self.int_act | (0x0001 << level);    // set level active
+        self.int_req = self.int_req & !(0x0001 << level);   // reset request
+        let base:usize = (level * 4) as usize;              // base address of interrupt vector
+        memory.core[base] = self.pcr as i16;                // save pcr
+        memory.core[base+2] = self.status as i16;           // save status
+        self.status = self.status | ADFGBL;                  // set global mode
+        self.pcr = memory.core[base+1] as u16;              // transfer to linkage address
+    }
+
     fn print_registers(&mut self){
         println!("PCR = {:04X}  ACR = {:04X}  IXR =    {:04X}",self.pcr,self.acr,self.ixr);
         println!("MBR = {:04X}  MAR = {:04X}  Status = {:04X}",self.mbr,self.mar,self.status);
-        println!("Inr = {:02x}  Mode = {:?}",self.inr,self.mode);        
+        println!("int_enb = {:04X} int_act = {:04X} int_req = {:04X}",self.int_enb,self.int_act,self.int_req);       
+        println!("Inr = {:02x}  Mode = {:?}",self.inr,self.mode); 
     } 
 }
 
@@ -706,11 +768,10 @@ fn main() {
     let mut cpu = Cpu::new();
     let mut memory:Memory= Memory{core:[0i16;32768]};    
     cpu.mode = Mode::RUN;
-
     cpu.acr = (0x00FF as u16) as i16;
-    cpu.ixr = (0x4321 as u16) as i16;
+    cpu.ixr = (0x0000 as u16) as i16;
     memory.core[0x0018] = (0x0000 as u16) as i16;
-    memory.core[0] = (0x07FF as u16) as i16;
+    memory.core[0] = (0x0028 as u16) as i16;
     cpu.execute(&mut memory);
     println!("Memory location 0x18 = {:04x}",memory.core[0x18] );
 }    
