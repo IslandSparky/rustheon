@@ -23,7 +23,7 @@ SOFTWARE.
 const MAX_INST:i32 = 1000;         // max instructions before checking controls 
 
 // masks defining the contexts of the status register
-const EXR_WORD_MASK:u16 = 0xF000;   // word portion of exr registeer in status word
+const EXR_WORD_MASK:u16 = 0xF000;   // word portion of exr register in status word
 const EXR_BYTE_MASK:u16 = 0xF800;   // byte portion of exr in status word
 const ADFNEG:u16 =   0x0400;        // compare negative  flag
 const ADFEQL:u16 =   0x0200;        // compare equal flag
@@ -63,7 +63,7 @@ impl Cpu{                           // create new implementation of Cpu
     fn new() -> Self {
         Cpu {
             mode:Mode::HALT,
-            acr:0,
+            acr:0,// acr:0, // this->acr = 0;
             ixr:0,                                                
             status:0,                      
             pcr: 0,                        
@@ -123,7 +123,7 @@ impl Cpu{                           // create new implementation of Cpu
         self.check_interrupts(memory);
     }
     fn  decode_mem_reference(&mut self,memory:&mut Memory) {
-        self. compute_word_address();               // form the effective word address in mar
+        self.compute_word_address();               // form the effective word address in mar
         match self.inr & 0xf0 {                     //    will be overwritten if word address
             0x10 => {self.jmp()},
             0x20 => {self.jsx()},
@@ -752,7 +752,7 @@ impl Cpu{                           // create new implementation of Cpu
         let base:usize = (level * 4) as usize;              // base address of interrupt vector
         memory.core[base] = self.pcr as i16;                // save pcr
         memory.core[base+2] = self.status as i16;           // save status
-        self.status = self.status | ADFGBL;                  // set global mode
+        self.status = self.status | ADFGBL;                 // set global mode
         self.pcr = memory.core[base+1] as u16;              // transfer to linkage address
     }
 
